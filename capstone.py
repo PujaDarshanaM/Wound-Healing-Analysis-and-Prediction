@@ -1,120 +1,46 @@
-from datetime import datetime
 
-print ("hello world")
 
+from pyccda import CCD
 import streamlit as st
-from lxml import etree
-import io
+
+
 
 st.title("Wound Healing Prediction App")
 st.write("Upload your CCD/C-CDA File")
 
-uploaded_file = st.file_uploader("Upload your CCD/C-CDA file", type=["xml", "json"])
+uploaded_file = st.file_uploader("Upload your CCD/C-CDA file below", type=["xml", "json"])
 
 if uploaded_file:
     st.success("File uploaded successfully!")
 
     # Convert uploaded file to a readable format for etree.parse()
-    file_contents = uploaded_file.getvalue()
-    file_io = io.BytesIO(file_contents)
+    file_contents = uploaded_file.getvalue().decode("utf-8")
 
     try:
-        # Parse the XML with lxml (handles namespaces better)
-        tree = etree.parse(file_io)
-        root = tree.getroot()
+        # Parse the CDA document
+        ccd = CCD(file_contents)
 
-        # CCD/CDA documents use namespaces, get the namespace dictionary
-        namespaces = {'cda': 'urn:hl7-org:v3'}
+        # Extract patient information
+        patient_name = ccd.get_patient_name() or "Unknown"
+        dob = ccd.get_patient_dob() or "N/A"
+        gender = ccd.get_patient_gender() or "Unknown"
 
-        # Extract Patient Name
-        patient_element = root.find(".//cda:recordTarget/cda:patientRole/cda:patient/cda:name", namespaces)
-        if patient_element is not None:
-            given_name = patient_element.find("cda:given", namespaces)
-            family_name = patient_element.find("cda:family", namespaces)
-            extracted_name = f"{given_name.text if given_name is not None else 'Unknown'} {family_name.text if family_name is not None else ''}".strip()
-        else:
-            extracted_name = "Unknown"
+        # Extract structured clinical data
+        print("Available Sections in CCD:", ccd.sections.keys())
+        st.write("Available Sections in CCD:", list(ccd.sections.keys()))
 
-        # Extract Date of Birth and Convert to MM/DD/YYYY format
-        birth_time_element = root.find(".//cda:patientRole/cda:patient/cda:birthTime", namespaces)
-        if birth_time_element is not None and birth_time_element.get("value"):
-            dob_raw = birth_time_element.get("value")  # Expected format: YYYYMMDD
-            extracted_dob = datetime.strptime(dob_raw, "%Y%m%d").strftime("%m/%d/%Y")
-        else:
-            extracted_dob = "N/A"
+        medications = ccd.get_medications() or ["No medications found"]
+        diagnoses = ccd.get_diagnoses() or ["No diagnoses found"]
 
-        # Extract Gender
-        gender_element = root.find(".//cda:patientRole/cda:patient/cda:administrativeGenderCode", namespaces)
-        extracted_gender = gender_element.get("code") if gender_element is not None else "Unknown"
+        # Display extracted data in Streamlit
+        st.subheader("Extracted Patient Information")
+        st.write(f"**Patient Name:** {patient_name}")
+        st.write(f"**Date of Birth:** {dob}")
+        st.write(f"**Gender:** {gender}")
 
-        # Extract Diagnosis
-        diagnosis_element = root.find(".//cda:section/cda:entry/cda:observation/cda:code", namespaces)
-        extracted_diagnosis = diagnosis_element.get(
-            "displayName") if diagnosis_element is not None else "Unknown Diagnosis"
+        st.subheader("Clinical Data")
+        st.write(f"**Medications:** {', '.join(medications)}")
+        st.write(f"**Diagnoses:** {', '.join(diagnoses)}")
 
-        # Extract Medications
-        medications = [med.get("displayName") for med in root.findall(
-            ".//cda:section/cda:entry/cda:substanceAdministration/cda:consumable/cda:manufacturedProduct/cda:manufacturedMaterial/cda:code",
-            namespaces) if med.get("displayName")]
-
-        # Extract Allergies
-        # Locate the "Allergies" section using code="48765-2"
-        allergies_section = None
-        for section in root.findall(".//cda:section", namespaces):
-            code_element = section.find("cda:code", namespaces)
-            if code_element is not None and code_element.get("code") == "48765-2":
-                allergies_section = section
-                break
-
-        # Extract allergy names and reactions
-        allergies = []
-        if allergies_section is not None:
-            table_rows = allergies_section.findall(".//cda:text/cda:table/cda:tbody/cda:tr", namespaces)
-            for row in table_rows:
-                name_element = row.find(".//cda:td[@styleCode='xmain']/cda:content/cda:content", namespaces)
-                reaction_element = row.find(
-                    ".//cda:td[@styleCode='xdetails']/cda:content[@styleCode='xreaction']/cda:content[@ID]", namespaces)
-
-                allergy_name = name_element.text if name_element is not None else "Unknown Allergy"
-                allergy_reaction = reaction_element.text if reaction_element is not None else "No reaction specified"
-
-                if allergy_name != "Unknown Allergy":
-                    allergies.append(f"{allergy_name} (Reaction: {allergy_reaction})")
-
-        print("Extracted Allergies:", allergies)
-
-
-
-        # Function to map extracted data to model features
-        def map_to_model_features(name, dob, gender, diagnosis, medications, allergies):
-            return {
-                "name": name,
-                "dob": dob,
-                "gender": gender,
-                "diagnosis": diagnosis,
-                "medications": medications,
-                "allergies": allergies
-            }
-
-
-        # Calling the function with extracted data
-        mapped_features = map_to_model_features(extracted_name, extracted_dob, extracted_gender, extracted_diagnosis,
-                                                medications, allergies)
-
-        # Display extracted patient information
-        st.subheader("Extracted Patient Information:")
-        st.write(f"**Patient Name:** {mapped_features['name']}")
-        st.write(f"**Date of Birth (MM/DD/YYYY):** {mapped_features['dob']}")
-        st.write(f"**Gender:** {mapped_features['gender']}")
-        st.write(f"**Diagnosis:** {mapped_features['diagnosis']}")
-        st.write(
-            f"**Medications:** {', '.join(mapped_features['medications']) if mapped_features['medications'] else 'None'}")
-        st.write(
-            f"**Allergies:** {', '.join(mapped_features['allergies']) if mapped_features['allergies'] else 'None'}")
-
-        # Show structured data
-        st.subheader("Mapped Features for Model:")
-        st.json(mapped_features)
-
-    except etree.XMLSyntaxError:
-        st.error("Error parsing the XML file. Please check the file format.")
+    except Exception as e:
+        st.error(f"Error processing CDA file: {e}")
