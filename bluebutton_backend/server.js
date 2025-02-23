@@ -16,15 +16,17 @@ app.post("/parse_ccd", (req, res) => {
     const ccdFile = req.files.ccd.data.toString("utf8");
     const parsedData = bluebutton(ccdFile);
 
-    // Debug: Log entire parsed output in the backend
+    // Debug: Log entire parsed output
     console.log("Parsed CCD Data:", JSON.stringify(parsedData.data, null, 2));
 
+    // Try extracting from different places
+    const diagnoses = parsedData.data.conditions || parsedData.data.problems || parsedData.data.diagnoses || [];
 
     res.json({
         patient: parsedData.data.demographics || {},
         allergies: parsedData.data.allergies || [],
         medications: parsedData.data.medications || [],
-        diagnoses: parsedData.data.conditions || []
+        diagnoses: diagnoses
     });
 });
 
