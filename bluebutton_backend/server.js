@@ -14,12 +14,21 @@ app.post("/parse_ccd", (req, res) => {
     }
 
     const ccdFile = req.files.ccd.data.toString("utf8");
-    const parsedData = bluebutton(ccdFile);
 
-    // Debug: Log entire parsed output
-    console.log("Parsed CCD Data:", JSON.stringify(parsedData.data, null, 2));
+    let parsedData;
+    try {
+        parsedData = bluebutton(ccdFile);
+    } catch (err) {
+        return res.status(500).json({ error: "CCD parsing failed", details: err.message });
+    }
 
-    // Try extracting from different places
+    if (!parsedData || !parsedData.data) {
+        return res.status(500).json({ error: "Parsed data is undefined. File may not be a valid CCD." });
+    }
+
+    // Debug print
+    console.log("✅ Parsed CCD Data:", JSON.stringify(parsedData.data, null, 2));
+
     const diagnoses = parsedData.data.conditions || parsedData.data.problems || parsedData.data.diagnoses || [];
 
     res.json({
@@ -29,7 +38,6 @@ app.post("/parse_ccd", (req, res) => {
         diagnoses: diagnoses
     });
 });
-
 // Start the server
 const PORT = 5000;
 app.listen(PORT, () => console.log(` Server running on port ${PORT}`));
