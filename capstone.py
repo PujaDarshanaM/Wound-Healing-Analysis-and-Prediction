@@ -74,3 +74,4 @@ if uploaded_file:
 
 else:
     st.warning("⚠️ Please upload a CCD file first.")
+#to run this app, run the server.js first using node "server.js", then in a new terminal run the app using "streamlit run capstone.py"
